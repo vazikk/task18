@@ -7,8 +7,9 @@
 
 ```
 [staging_servers]
-ubuntu ansible_host=44.206.248.213 ansible_user=ubuntu
-amaz ansible_host=54.210.98.109
+ubuntu ansible_host=44.202.16.190 ansible_user=ubuntu
+amaz ansible_host=3.84.33.91
+
 ```
 
 ```
@@ -18,20 +19,32 @@ ansible_ssh_private_key_file : /var/key.pem
 ```
 
 Создал roles: <br>
-![image](https://github.com/user-attachments/assets/bf8cbc88-943e-4b5c-8c7e-01a594b64025)
+![image](https://github.com/user-attachments/assets/d2cc4d8a-2969-454a-a352-bdce4371b654)
 
 
 
- Установил Docker и Docker compose в /roles/istall/tasks/main.yml: <br>
+ Установил Docker и Docker compose в /roles/docker/tasks/main.yml: <br>
 ```
- # tasks file for install
-- name: Install Docker on Ubuntu
+---
+# tasks file for docker
+- name: Update package index
   apt:
-    name: docker.io
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Update yum package index
+  yum:
+    name: '*'
+    state: latest
+  when: ansible_os_family == "RedHat"
+
+- name: Install Docker on Debian
+  apt:
+    name: docker-ce
     state: present
   when: ansible_os_family == "Debian"
 
-- name: Install Docker on Amazon Linux
+- name: Install Docker on RedHat
   yum:
     name: docker
     state: present
@@ -39,24 +52,13 @@ ansible_ssh_private_key_file : /var/key.pem
 
 - name: Install Docker Compose
   shell: >
-    curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+    curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose->
   args:
     creates: /usr/local/bin/docker-compose
 
 - name: Set permissions for Docker Compose
   command: chmod +x /usr/local/bin/docker-compose
 
-- name: Start Docker service
-  service:
-    name: docker
-    state: started
-    enabled: true
-```
-
-Подготовка для docker: <br>
-```
-  ---
-# tasks file for docker
 - name: Create working directory
   file:
     path: "{{ working_directory }}"
@@ -66,15 +68,31 @@ ansible_ssh_private_key_file : /var/key.pem
   template:
     src: docker-compose.yml.j2
     dest: "{{ working_directory }}/docker-compose.yml"
+  notify: Restart my_docker service
 
-- name: Start Docker Compose
-  command: docker-compose up -d
-  args:
-    chdir: "{{ working_directory }}"
+- name: Generate systemd service file
+  template:
+    src: my_docker_service.j2
+    dest: /etc/systemd/system/my_docker.service
+  notify: Restart my_docker service
+
+- name: Start Docker service
+  systemd:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Start and enable my_docker service
+  systemd:
+    name: my_docker.service
+    state: started
+    enabled: true
 
 ```
 
-Файл docker-compose + jinja: <br>
+
+
+Файл docker-compose + jinja /dokcer-compose.yml.j2: <br>
 ```
 version: '3.8'
 
@@ -83,12 +101,31 @@ services:
     image: {{ docker_image }}
     ports:
       - "{{ host_port }}:80"
+    restart: always
 
 ```
 
+Systemd: <br>
+```
+[Unit]
+Description=My Docker Compose Service
+After=docker.service
+
+[Service]
+Restart=always
+WorkingDirectory={{ working_directory }}
+ExecStart=/usr/local/bin/docker-compose up
+ExecStop=/usr/local/bin/docker-compose down
+TimeoutStopSec=30  # Время ожидания остановки контейнера
+
+[Install]
+WantedBy=multi-user.target
+```
+
+
 ИТОГ: <br>
 
-![image](https://github.com/user-attachments/assets/6b62cf88-02c0-4d81-b8ed-a2144dcaceb8)
-![image](https://github.com/user-attachments/assets/49dcae20-7ea7-4080-b2f4-2ef8a17522d9)
+![image](https://github.com/user-attachments/assets/b9b255e1-1164-4b61-8f4a-11f5856980ae)
+![image](https://github.com/user-attachments/assets/d8538848-8ff5-4a81-837a-1433c95922c1)
 
 
